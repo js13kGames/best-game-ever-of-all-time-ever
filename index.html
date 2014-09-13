@@ -1,0 +1,1804 @@
+<html>
+	<head>
+		<title></title>
+		<style>
+		html {
+			background: black;
+		}
+		body {
+			width: 960px;
+			height: 720px;
+			margin: 0 auto;
+			margin-top: 55px;
+			background: gray;
+			border: solid 20px gray;
+			border-radius: 20px;
+			overflow: hidden;
+		}
+		#gametitle {
+			color: white;
+			position: absolute;
+			margin-top: -50px;
+		}
+		#stats {
+			position: absolute;
+			background: #ccac00;
+			padding: 20px;
+			left: -780px;
+			margin-left: -270px;
+			top: -300px;
+			z-index: 100;
+			border: 2px solid #000;
+		}
+		#stats div {
+			text-align: left;
+		} 
+		#stats table {
+			margin: 8px;
+			padding: 4px;
+			border: solid 1px;
+		}
+		#stats td{
+			width: 110px;
+			padding: 4px;
+			font-weight: bold;
+		}
+		button {
+			float: right;
+		}
+		#ChooseDifficulty {
+			position: absolute;
+			background: #ccac00;
+			padding: 20px;
+			width: 590;
+			left: 50%;
+			margin-left: -295px;
+			top: 134px;
+			z-index: 100;
+			border: 2px solid #000;
+		}
+		#ChooseDifficulty table {
+			background: white;
+			font-size: 20px;
+			border-radius: 15px;
+			color: black;
+			margin: 0 auto;
+			padding: 15px 25px;
+			max-width: 400px;
+		}
+		#ChooseDifficulty td{
+			height: 30px;
+			border-bottom: 2px dashed red;
+		}
+		#startgame {
+			padding: 3px 5px;
+			color: white;
+			background: black;
+		}
+		#health,
+		#level {
+			padding: 10px 20px;
+			background: black;
+			color: white;
+			position: absolute;
+			top: 85px;
+		}
+		#level {
+			margin-left: 860px;
+		}
+		#instructions {
+			margin-top: -6px;
+			padding: 10px;
+			background: black;
+			color: white;
+			z-index: 999;
+		}
+		</style>
+		<script>
+		     var audioContext = new window.AudioContext() || new window.webkitAudioContext();
+		    var Audio = function () {
+		        var a = this;
+
+		        this.masterGain = audioContext.createGain();
+		        this.masterGain.connect(audioContext.destination);
+		        this.masterGain.gain.value = 0.4;
+
+		        this.delay = audioContext.createDelay();
+		        this.delay.delayTime.value = 0.1;
+
+		        
+
+		        this.feedback = audioContext.createGain();
+		        this.feedback.gain.value = 0.5;
+
+		        this.delay.connect(this.feedback);
+		        this.feedback.connect(this.delay);
+
+		        //this.masterGain.connect(this.delay);
+		        this.delay.connect(audioContext.destination);
+		        this.delayConnected = false;
+		        this.Delay = function (add) {
+		            if (add && !this.delayConnected) {
+		                this.delayConnected = true;
+		                a.masterGain.disconnect(audioContext.destination);
+		                a.masterGain.connect(a.delay);
+		            } else if (!add && this.delayConnected) {
+		                this.delayConnected = false;
+		                a.masterGain.disconnect(a.delay);
+		                a.masterGain.connect(audioContext.destination);
+		            }
+		        };
+
+		        this.Voice = function (type, frequency, attack, decay) {
+		            this.voice = this;
+		            this.osc = audioContext.createOscillator();
+		            this.osc.frequency.value = frequency;
+		            this.osc.start(0);
+		            this.gain = audioContext.createGain();
+		            this.gain.gain.value = 0;
+		            this.gain.connect(a.masterGain);
+
+		            this.osc.connect(this.gain);
+
+		            this.attack = attack;
+		            this.decay = decay;
+
+		            this.osc.type = type;
+
+		            this.Trigger = function () {
+		                var now = audioContext.currentTime;
+		                this.gain.gain.cancelScheduledValues(now);
+		                this.gain.gain.linearRampToValueAtTime(1, now);
+		                this.gain.gain.linearRampToValueAtTime(0, now + .1);
+		            };
+
+		            this.SetFrequency = function (frequency) {
+		                this.osc.frequency.linearRampToValueAtTime(frequency, 0);
+		            };
+		        };
+		    };
+		    var audio = new Audio();
+			window.onload = function() {
+				'use strict';
+				//make sure canvas id is ms <canvas id="ms"></canvas>
+				var c = document.getElementById("ms"),
+                    ctx = c.getContext("2d"),
+                    cL = c.offsetLeft,
+                    cT = c.offsetTop,
+                    elements = [],
+                    enemies = [],
+                    enemyRecycle = [],
+                    currentEnemyType = '#111111',
+                    hit = [],
+                    healthbar = document.getElementById('healthbar'),
+                    healthtotal = document.getElementById('healthtotal'),
+                    levelbar = document.getElementById('levelbar'),
+                    staticHit = [],
+                    hovering = false,
+                    cursorX,
+                    cursorY,
+                    firstStats,
+                    statstoggle,
+                    isForest,
+                    treePopulation = [],
+                    forestRooms = [],
+                    forBlock = 0,
+                    isDungeon,
+                    dungeonArray = [],
+                    dunBlock = 0,
+                    DungeonX = 0,
+                    DungeonY = 0,
+                    rightBlocks = [],
+                    dungeonRooms = [],
+                    dungeonWidth,
+                    dunmiddle = 1,
+                    cantGo,
+                    canLeft = true,
+                    canRight = true,
+                    canUp = true,
+                    canDown = true,
+                    blockOverLap = 3,
+                    attackTrigger,
+                    bleeding,
+                    difficulty = 1,
+                    finalCount = 0,
+                    gameover;
+				
+
+				function MathSign(x) { return x ? x < 0 ? -1 : 1 : 0; }
+				//Used as part of the update loop. Sorts through an array based on any provided parameter;
+				//Target usage is for sorting by the z-Index of each object before drawing to screen. This allows for control over display order.
+				//Example:
+				//elements.sortBy("zIndex");
+				//elements.forEach(function(element) {
+            	//	element.Draw();
+        		//});
+
+				function start() {
+				Array.prototype.sortBy = function(){
+					function _sortByAttr(attr){
+						var sortOrder = 1;
+						if(attr[0] == "-"){
+							sortOrder = -1;
+							attr = attr.substr(1);
+						}
+						return function(a, b){
+							var result = (a[attr] < b[attr]) ? -1 : (a[attr] > b[attr]) ? 1 : 0;
+							return result * sortOrder;
+						};
+					}
+					function _getSortFunc(){
+						var result;
+						if(arguments.length === 0){
+							throw "No argument in sortBy";
+						}
+						var args = arguments;
+						return function(a,b){
+							for (var result = 0, i = 0; result === 0 && i < args.length; i++){
+								result = _sortByAttr(args[i])(a,b);
+							}
+							return result;
+						};
+					}
+					return this.sort(_getSortFunc.apply(null, arguments));
+				};
+				
+				//This allows for position to be stored as a single variable, which will simplify movement processing down the road.
+				//Example:
+				//square.pos = new Vec2(20,10);
+				//console.log(square.pos.X); outputs 20
+				//console.log(square.pos.Y); outputs 10
+				function Vec2(x,y){
+					this.X = x;
+					this.Y = y;
+				}
+
+			    //eval workaround
+				function val(exe) {
+				    //Eval() workaround credit to Jim Driscoll
+				    //https://weblogs.java.net/blog/driscoll/archive/2009/09/08/eval-javascript-global-context 
+				    //ie workaround
+				    if (window.execScript) {
+				        window.execScript(exe);
+				        return;
+				    }
+				    //chrome and other browsers
+				    var fn = function () {
+				        window.eval.call(window, exe());
+				    };
+				    fn();
+				}
+				
+				//A unified constructor for all game objects. Also provides quick access to common methods
+				function Entity(x, y, z, registerEntity) {
+				    var self = this;
+
+				    this.pos = new Vec2(x, y);
+				    this.zIndex = z;
+				    if (typeof (registerEntity) == "undefined" || registerEntity === false) {
+				        elements.push(this);
+				    }
+
+				    this.SetPos = function (pos) {
+				        this.pos = pos;
+				        return this;
+				    };
+
+				    this.SetColor = function (cr) {
+				        this.color = cr;
+				        return this;
+				    };
+
+				    this.SetName = function (n) {
+				        this.name = n;
+				        return this;
+				    };
+
+				    this.SetRotate = function (r) {
+				        this.rotation = r;
+				        return this;
+				    };
+
+				    this.SetBorder = function (bc) {
+				        this.borderColor = bc;
+				        return this;
+				    };
+
+				    this.StoreData = function (n) {
+				        this.Data = n;
+				        return this;
+				    };
+
+				    this.StoreData2 = function (g) {
+				        this.Data2 = g;
+				        return this;
+				    };
+
+				    this.on = function (handle, E) {
+				        if (handle === 'click') {
+				            this.click = E;
+				            c.addEventListener('click', function (E) {
+				                if (mouseHandler(self)) {
+				                    var exe = self.click;
+				                    val(exe);
+				                    //eval(self.click);
+				                }
+				            });
+				            return this;
+				        } else if (handle === 'mouseover') {
+				            this.mouseover = E;
+				            return this;
+				        } else if (handle === 'mouseout') {
+				            this.mouseout = E;
+				            return this;
+				        } else {
+				            this.on = null;
+				            return null;
+				        }
+				    };
+
+				    this.click = '';
+				    this.mouseover = '';
+				    this.mouseout = '';
+				    this.over = false;
+
+				    //does object have a collidable if so add it to the array, if this is change then remove it from the array so it no longer detects collision
+				    this.collider = false;
+				    this.static = true;
+				    this.collidable = function (tf) {
+				        if (tf && !this.collider) {
+				            this.collider = true;
+				            if (this.static) {
+				                staticHit.push(this);
+				            } else {
+				                hit.push(this);
+				            }
+				        } else if(!tf) {
+				            this.collider = false;
+				            if (this.static) {
+				                var find = staticHit.indexOf(this);
+				                if (find >= 0) {
+				                    staticHit.splice(find, 1);
+				                }
+				            } else {
+				                var find = hit.indexOf(this);
+				                if (find >= 0) {
+				                    hit.splice(find, 1);
+				                }
+				            }
+				        }
+				        return this;
+				    };
+
+				    this.Player = false;
+				    this.IsPlayer = function (p) {
+				        if (p) {
+				            this.Player = true;
+				            this.static = false;
+				        } else {
+				            this.Player = false;
+				        }
+				        return this;
+				    };
+
+				    this.Enemy = false;
+				    this.IsEnemy = function (e) {
+				        if (e) {
+				            this.Enemy = true;
+				            enemies.push(this);
+				            this.static = false;
+				        } else {
+				            this.Enemy = false;
+				        }
+				        return this;
+				    };
+				}
+				
+				var engine = {
+					//sq is a small 2 letter variable that is easily recignizable that is why it sq and not rect
+					"sq": function(x,y,z,registerEntity){
+						Entity.apply(this,[x,y,z,(typeof(registerEntity)!="undefined")]);
+						
+						this.SetHeight = function(h){
+							this.height = h;
+							return this;
+						};
+						
+						this.SetWidth = function(w){
+							this.width = w;
+							return this;
+						};
+						
+						this.SetSize = function(s){
+							this.width = this.height = s;
+							return this;
+						};
+						
+						this.offset = new Vec2(0,0);
+						this.SetOffset = function(x,y){
+							this.offset.X = x;
+							this.offset.Y = y;
+							return this;
+						};
+						this.Reposition = function(position){
+							this.pos.X = position.X + this.offset.X;
+							this.pos.Y = position.Y + this.offset.Y;
+							return this;
+						};
+
+						this.parent = null;
+						this.SetParent = function (parent) {
+						    this.parent = parent;
+						    return this;
+						};
+						
+						this.border = 5;
+						
+						this.Draw = function(){
+							ctx.save();
+							ctx.beginPath();
+							ctx.fillStyle = this.color;
+							ctx.rotate(this.rotation * Math.PI / 180);
+							ctx.rect(this.pos.X, this.pos.Y, this.width, this.height);
+							ctx.fill();
+							ctx.lineWidth = this.border;
+							ctx.strokeStyle = this.borderColor;
+							ctx.stroke();
+							ctx.closePath();
+							ctx.restore();
+							//player controller
+							
+							//check if they have a mouse over event
+							if(this.mouseover){
+								//check if they are currently hovering over something
+								if (!hovering) {
+									//check if the mouse coord are over a square object
+									if (mouseHandler(this)){
+										//eval(this.mouseover);
+										//execute the over event
+    									val(this.mouseover);
+    									//let it know it is hoving over something
+										hovering = true;
+										//which object is being hovered over
+										this.over = true;
+									} 
+								} else {
+									if (!mouseHandler(this)){
+										if (this.over) {
+											if (this.mouseout) {
+												//eval(this.mouseout);
+    											val(this.mouseout);
+  												//tell it, it is no longer hovering over anything
+  												//back to defaults
+    											hovering = false;
+    											this.over = false;
+											} else {
+												//back to defaults
+												hovering = false;
+												this.over = false;
+											}
+										}
+									}
+								}
+							}
+						};
+						
+						return this;
+					},
+
+					"button": function(x,y,z){
+						Entity.apply(this,[x,y,z]);
+						//what do you want to say?
+						this.txt = '';
+						this.font = '20px Arial';
+						elements.push(this);
+
+						
+						this.SetText = function(t){
+							this.txt = t;
+							return this;
+						};
+						
+						this.SetBGColor = function(c){
+							this.bgColor = c;
+							return this;
+						};
+
+						this.SetFontSize = function(d){
+							this.fontSize = d;
+							this.font = d + "px Arial";
+							return this;
+						};
+
+						this.SetPadding =  function(b,l) {
+							this.padTop = b || 10;
+							this.padLeft = l || 15;
+							return this;
+						};
+						
+						//first find text width, then set background color, then fill rectangle (the fill is based on text being 20px if the font changes then so will the measurements), set new color for text, fill text;
+						//to do have a set font family and font pixel variable
+						
+						this.Draw = function(){
+							var tw;
+							ctx.save();
+							ctx.font = this.font;
+							tw = ctx.measureText(this.txt).width;
+							ctx.fillStyle = this.bgColor;
+							if (this.padTop) {
+								ctx.fillRect((this.pos.X-this.padLeft),(this.pos.Y-(this.fontSize-5))-this.padTop,(tw+((this.padLeft*2)+1)),((this.fontSize+8)+this.padTop));
+							}
+							ctx.fillStyle = this.color;
+							ctx.fillText(this.txt,this.pos.X,this.pos.Y);
+							ctx.restore();
+						};
+						
+						return this;
+				 	},
+					
+					"grid": function(x, y, z) {
+				 		Entity.apply(this,[x,y,z]);
+						this.type = 'block';
+
+						this.SetHeight = function(h){
+							this.height = h;
+							return this;
+						};
+						
+						this.SetWidth = function(w){
+							this.width = w;
+							return this;
+						};
+
+						this.SetSize = function(s){
+							this.width = this.height = s;
+							return this;
+						};
+
+						this.Draw = function() {
+	
+							if (this.type == 'block') {
+								ctx.beginPath();
+								ctx.strokeStyle = "#1e1e1e";
+	    						ctx.lineWidth = 0.5;
+	    						ctx.beginPath();
+	    						var x = 0;
+    							var y = 0;
+    							for(var i = 0;i < Math.round(ctx.canvas.width/this.width); i++){
+						
+									x = i*this.width;
+									y = 0;
+									ctx.moveTo(x,y);
+									ctx.lineTo(x,y+ctx.canvas.height);
+						
+								}
+								for(var j = 0; j < Math.round(ctx.canvas.height/this.height); j++){
+			
+									x = 0;
+									y = j*this.height;
+									ctx.moveTo(x,y);
+									ctx.lineTo(x+ctx.canvas.width,y);
+				
+								}
+								ctx.stroke();
+								ctx.closePath();
+							}
+						};
+
+						return this;
+				 	}
+
+				};
+				
+				c.onmousemove = function(e){
+    				cursorX = e.pageX - cL;
+    				cursorY = e.pageY - cT;
+				};
+				
+				//Mouse algorithm
+				function mouseHandler(object) {
+					return cursorY > object.pos.Y && cursorY < object.pos.Y + object.height && cursorX > object.pos.X && cursorX < object.pos.X + object.width;
+				}
+				
+				//collidable algorithm
+				function collides(a, b) {
+					//this algorithm is based on measurements of a square will have to be adjusted now that circles have been added *if we want circle collision*
+  					return a.pos.X < b.pos.X + b.width &&
+         			a.pos.X + a.width > b.pos.X &&
+         			a.pos.Y < b.pos.Y + b.height &&
+         			a.pos.Y + a.height > b.pos.Y;
+				}
+
+
+
+				var Enemy = function (x, y, z, color) {
+				    engine.sq.apply(this,[x, y, z]);
+				    this.SetColor('black');
+				    this.whatLevel = (15 * (Math.floor((Math.random() * ((character.getLevel() + 2)) / 2) + 1)));
+					this.SetBoss = function(s) {
+						this.isBoss = s;
+						if (s) {
+							this.SetSize((10*15));
+						}
+					};
+				    this.SetSize(this.whatLevel);
+				    this.SetName("enemy");
+				    this.SetBorder(color);
+				    this.IsEnemy(true);
+				    this.collidable(true);
+				    this.StoreData((this.whatLevel * 3));
+				    this.StoreData2((this.whatLevel * 2));
+				    //console.log('monster level: ' + whatLevel);
+				    
+				    this.AdjEnemy = function (y2, x2, newColor, boss) {
+				        var whatLevel2 = (15 * (Math.floor((Math.random() * ((character.getLevel() + 2)) / 2) + 1)));
+				        var eap = enemies.indexOf(this);
+				        enemies.splice(eap, 1);
+				        this.SetPos(new Vec2(y2, x2));
+				        this.SetSize(whatLevel2);
+				        this.SetBorder(newColor);
+				        this.SetBoss(boss);
+				        this.Data = whatLevel2 * 3;
+				        this.Data2 = whatLevel2 * 2;
+				        enemies.push(this);
+				    };
+
+				    this.isActive = function(){
+				        return (this.pos.X>0||this.pos.Y>0);
+				    };
+
+				    this.movementSpeed = 20 / this.whatLevel;
+				    
+				    this.Movement = function () {
+				        if (!this.isActive()){
+				            if (this.collider) {
+				                this.collidable(false);
+				            }
+				            return;
+				        } else if (!this.collider); {
+				            this.collidable(true);
+				        }
+
+				        var diffX = character.pos.X - this.pos.X;
+				        var diffY = character.pos.Y - this.pos.Y;
+				        var diffH = Math.sqrt(Math.pow(diffX, 2) + Math.pow(diffY, 2));
+				        this.pos.X += this.movementSpeed * diffX/diffH;
+				        this.pos.Y += this.movementSpeed *  diffY/diffH;
+				    };
+				};
+
+				var startingEnemies = function () {
+				    var enemy1 = new Enemy(randomX(), randomY(), 1, '#333333'),
+						enemy2 = new Enemy(randomX(), randomY(), 1, '#333333'),
+						enemy3 = new Enemy(randomX(), randomY(), 1, '#333333'),
+						enemy4 = new Enemy(randomX(), randomY(), 1, '#333333'),
+						enemy5 = new Enemy(randomX(), randomY(), 1, '#333333'),
+						enemy6 = new Enemy(randomX(), randomY(), 1, '#333333');
+				    enemyRecycle.push(enemy1, enemy2, enemy3, enemy4, enemy5, enemy6);
+				    enemyReset();
+				}
+
+				var enemyReset = function (enemyType) {
+				    var clearRadius = 200;
+				    var randX = 0;
+				    var randY = 0;
+				    var dist = 0;
+				    enemyRecycle.forEach(function (ens) {
+				        
+				        do {
+				            randX = randomX();
+				            randY = randomY();
+				            dist = Math.sqrt(Math.pow(randX - character.pos.X,2) + Math.pow(randY - character.pos.Y,2));
+				        } while (dist < clearRadius);
+                        ens.AdjEnemy(randY, randX, enemyType);
+				    });
+				}
+
+				function update() {
+					//may not work in all browsers ToDo: test in other browsers and come up with a new solution if it doesnt
+				    //below is a check to see if objects are colliding
+					var characterHitX = false;
+					var characterHitY = false;
+					//console.log(staticHit.length+"sh");
+					hit.forEach(function(hits) {
+					    if (hits !== undefined) {
+					        //find the next item in the array this also ensures that it is not checking double that it is colliding with an object
+                            
+					        staticHit.forEach(function (staticHits) {
+					            if (collides(hits, staticHits)) {
+					                var xDif = (hits.pos.X + hits.width / 2) - (staticHits.pos.X + staticHits.width / 2);
+					                var yDif = (hits.pos.Y + hits.height / 2) - (staticHits.pos.Y + staticHits.height / 2);
+					                if (Math.abs(xDif) > Math.abs(yDif)) {
+					                    if (xDif > 0) {
+					                        getEmOut(hits, staticHits, "left");
+					                    } else {
+					                        getEmOut(hits, staticHits, "right");
+					                    }
+					                } else {
+					                    if (yDif > 0) {
+					                        getEmOut(hits, staticHits, "up");
+					                    } else {
+					                        getEmOut(hits, staticHits, "down");
+					                    }
+					                }
+					            }
+					        });
+					        if (hit.length < 2) {
+					            return;
+					        }
+
+        					var getNext = hit.indexOf(hits);
+        						getNext = hit[getNext];
+        					if(getNext !== undefined){
+        					    if (collides(character, hits)) {
+            					    var rewind = character.lastDirection;
+            					    var xDif = (character.pos.X + character.width / 2) - (hits.pos.X + hits.width / 2);
+            					    var yDif = (character.pos.Y + character.height / 2) - (hits.pos.Y + hits.height / 2);
+            					    if (Math.abs(xDif) > Math.abs(yDif)) {
+            					        if (characterHitX) return;
+            					        if (xDif > 0) {
+            					            getEmOut(character, hits, "left");
+            					        } else {
+            					            getEmOut(character, hits, "right");
+            					        }
+            					        if (hits.Enemy) {
+            					            character.VelocityX = xDif/5;
+            					            character.sound.takeDamage.Trigger();
+            					            //enemy hight is the same as damage
+            					            character.currentHealth -= hits.height;
+            					        }
+            					    } else {
+            					        if (characterHitY) return;
+            					        if (yDif > 0) {
+            					            getEmOut(character, hits, "up");
+            					        } else {
+            					            getEmOut(character, hits, "down");
+            					        }
+            					        if (hits.Enemy) {
+            					            character.VelocityY = yDif/5;
+            					            character.sound.takeDamage.Trigger();
+            					            character.currentHealth -= hits.height;
+            					        }
+            					    }
+            					    if(hits.Data == '#B22222' || hits.Data == '#003EFF' || hits.Data == '#6B4226' || hits.Data == '#FAEBD7') {
+            					    	currentEnemyType = hits.Data;
+            					    	enemyReset(currentEnemyType);
+            					    }
+          						
+            						cantGo = true;
+            						
+            					} else {
+            						cantGo = false;
+            						canLeft = true;
+									canRight = true;
+									canUp = true;
+									canDown = true;
+									if(bleeding) {
+										bleeding = false;
+										//needed for longer effect
+										setTimeout(function(){
+											character.water.SetColor('black');
+            								character.fire.SetColor('black');
+            								character.air.SetColor('black');
+            								character.earth.SetColor('black');
+            							},100);
+									}
+            					}
+            				}
+            			}
+					});
+					enemies.forEach(function (enemy) {
+					    enemy.Draw();
+					    enemy.Movement();
+					});
+				    //may not work in all browsers ToDo: test in other browsers and come up with a new solution if it doesnt
+					elements.sortBy("zIndex");
+					elements.forEach(function (element) {
+					    element.Draw();
+
+					});
+				}
+
+				var currentDungeon = null;
+				function getEmOut(active, passive, rewind) {
+				    //console.log(name);
+					if (passive.name === 'collidable' || passive.name === 'block') {
+					    if(rewind == 'left'){
+					        active.pos.X = passive.pos.X + passive.width;
+            				canLeft = false;
+            			} else if (rewind == 'right'){
+            				active.pos.X = passive.pos.X - active.width;
+            				canRight = false;
+            			} else if (rewind == 'up') {
+            			    active.pos.Y = passive.pos.Y + passive.height;
+            				canUp = false;
+            			} else if (rewind == 'down'){
+            				active.pos.Y = passive.pos.Y - active.height;
+            				canDown = false;
+            			}
+            		} else if (active.name === "character" && passive.name === 'Dungeon') {
+            		    goToDungeon();
+            		    currentDungeon = passive.parent;
+            		    currentEnemyType = passive.Data; 
+            		    enemyReset(currentEnemyType);
+            		} else if (passive.name === 'enemy'){
+            			if(!bleeding){
+            				character.water.SetColor('#980002');
+            				character.fire.SetColor('#980002');
+            				character.air.SetColor('#980002');
+            				character.earth.SetColor('#980002');
+            				bleeding = true;
+            			}
+            		}
+				} 
+				
+
+
+				var Element = function (offset,color,size,name,border,data,data2) {
+				    engine.sq.apply(this, [0, 0, 0, true]);
+				    this.SetOffset(offset.X, offset.Y);
+				    this.SetColor(color);
+				    this.SetSize(size);
+				    this.SetName(name);
+				    this.SetBorder(border);
+				    this.StoreData(data);
+				    this.StoreData2(data2);
+				    return this;
+				}
+
+				var Character = function(){
+				    Entity.apply(this, [180, 280, 1]);
+				    this.name = "character";
+				    var self = this;
+				    this.size = 50;
+				    this.border = 5;
+				    this.width = 60;
+				    this.height = 60;
+				    this.IsPlayer(true);
+				    this.hasWater = false;
+				    this.hasFire = false;
+				    this.hasAir = false;
+				    this.hasEarth = false;
+				    this.water = new Element(new Vec2(this.border,this.border),'black',this.size/2-this.border,"water",'#111111','??','#003EFF'),
+					this.fire = new Element(new Vec2(this.size/2+this.border,this.size/2+this.border),'black',this.size/2-this.border,"fire",'#111111','??','#B22222'),
+					this.air = new Element(new Vec2(this.border,this.size/2+this.border),'black',this.size/2-this.border,"air",'#111111','??','#FAEBD7'),
+					this.earth = new Element(new Vec2(this.size / 2 + this.border, this.border), 'black', this.size / 2 - this.border, "earth", '#111111', '??', '#6B4226');
+				    this.collidable(true);
+					
+				    this.sound = {
+				        'attack': new audio.Voice("square", 60, 0, 0.1),
+				        'enemyKill': new audio.Voice("square", 90, 0, 1),
+				        'takeDamage': new audio.Voice("sawtooth", 150, 0.2, 5)
+				    };
+
+					this.stats = {
+							'Level': 1,
+							'FireLevel': 0,
+							'WaterLevel': 0,
+							'EarthLevel': 0,
+							'AirLevel': 0
+					};
+
+					this.attack = new engine.sq(this.pos.X,this.pos.Y,0,true).SetColor("#000000").SetSize(this.size+this.border).SetBorder("#000000");
+					
+					this.VelocityX = 0;
+					this.VelocityY = 0;
+					this.Speed = 10;
+					this.Friction = 0.8;
+					this.Keys = [];
+					document.body.addEventListener("keydown", function (e) {
+					    self.Keys[e.keyCode] = true;
+					});
+					document.body.addEventListener("keyup", function (e) {
+					    self.Keys[e.keyCode] = false;
+					});
+						
+					this.outline = new engine.sq(this.pos.X, this.pos.Y, -1, true).SetColor('#000000').SetSize(this.size + this.border).SetBorder('#000000');
+					
+					this.SetMovement = function (direction) {
+						if(!cantGo) {
+					    	if (direction == "left" && canLeft) {
+					        	if (this.VelocityX > -this.Speed) {
+					        	    this.VelocityX--;
+					        	}
+					    	}
+					    	if (direction == "up" && canUp) {
+					        	if (this.VelocityY > -this.Speed) {
+					            	this.VelocityY--;
+					   	        }
+					    	}
+					    	if (direction == "right" && canRight) {
+					    	    if (this.VelocityX < this.Speed) {
+					    	        this.VelocityX++;
+					    	    }
+					    	}
+					    	if (direction == "down" && canDown) {
+					        	if (this.VelocityY < this.Speed) {
+					        	    this.VelocityY++;
+					        	}
+					    	}
+						} 
+					};
+
+					this.SetAttackType = function (color) {
+					    character.outline.SetColor(color).SetBorder(color);
+					    character.attack.SetColor(color).SetBorder(color);
+					};
+
+					this.attackAlgorithm = function() {
+						var level = Math.floor((this.stats.Level/500)+1),
+							acc = level * 10,
+							missChance = Math.ceil(Math.sqrt((acc-(level*11-11))*100)),
+							hitNum = Math.floor((Math.random() * 100) + 1);
+							if(hitNum > missChance){
+								return true;
+							} else {
+								return false;
+							}
+
+					};
+
+					this.damageAlgorithm = function() {
+						var level = Math.floor((this.stats.Level/1000)+1),
+							power = level * 10,
+							damageMax = Math.ceil(Math.sqrt(power*100)),
+							damageTotal = Math.floor((Math.random() * damageMax) + 1);
+							return damageTotal;
+					};
+
+					this.endFight = function(exp) {
+						var lvlBefore = Math.floor((this.stats.Level/500)+1);
+						this.stats.Level += exp;
+						if (Math.floor((this.stats.Level/500)+1) > lvlBefore) {
+							console.log('lvlUp');
+							this.currentHealth = this.getLevel() * 500;
+						}
+						
+					};
+
+					this.getLevel = function() {
+						return Math.floor((this.stats.Level/500)+1);
+					};
+
+					this.currentHealth = this.getLevel() * 500;
+
+					this.SetHealth =  function(l) {
+						this.currentHealth = l;
+					};
+
+
+					this.screenMinX = -50;
+					this.screenMaxX = 950;
+					this.screenMinY = -50;
+					this.screenMaxY = 650;
+					this.EdgeCheck = function () {
+
+					};
+
+					this.Input = function () {
+					    var space = false;
+					    if (this.Keys[65] || this.Keys[37]) {
+					        this.SetMovement("left");
+					    }
+					    if (this.Keys[87] || this.Keys[38]) {
+					        this.SetMovement("up");
+					    }
+					    if (this.Keys[68] || this.Keys[39]) {
+					        this.SetMovement("right");
+					    }
+					    if (this.Keys[83] || this.Keys[40]) {
+					        this.SetMovement("down");
+					    }
+
+					    if (this.Keys[32] || this.Keys[13]) {
+					        if (this.space === false) {
+					            this.space = true;
+					        }
+					    } else {
+					        this.space = false;
+					    }
+
+					    //active weapon
+					    if (this.Keys[49]) {
+					    	if (this.hasWater){
+					        	this.SetAttackType('#003EFF');
+					        }
+					    }
+					    if (this.Keys[50]) {
+					    	if (this.hasFire){
+					        	this.SetAttackType('#B22222');
+					        }
+					    }
+					    if (this.Keys[51]) {
+					    	if (this.hasEarth){
+					        	this.SetAttackType('#6B4226');
+					        }
+					    }
+					    if (this.Keys[52]) {
+					    	if (this.hasAir){
+					        	this.SetAttackType('#FAEBD7');
+					        }
+					    }
+
+					    this.ProcessMovement();
+					};
+
+					this.ProcessMovement = function () {
+					    this.VelocityY *= this.Friction;
+					    this.pos.Y += this.VelocityY;
+					    this.VelocityX *= this.Friction;
+					    this.pos.X += this.VelocityX;
+					    if (isDungeon) {
+					        audio.Delay(true);
+					        if (this.pos.X > this.screenMaxX) {
+					            this.pos.X = 10;
+					            DungeonX += 1;
+					            enemyReset(currentEnemyType);
+					            dunPlace(dungeonRooms[(dungeonWidth * DungeonY) + DungeonX]);
+					        } else if (this.pos.X < this.screenMinX) {
+					            this.pos.X = 900;
+					            DungeonX -= 1;
+					            enemyReset(currentEnemyType);
+					            dunPlace(dungeonRooms[(dungeonWidth * DungeonY) + DungeonX]);
+					        } else if (this.pos.Y > this.screenMaxY) {
+					            this.pos.Y = 0;
+					            DungeonY += 1;
+					            enemyReset(currentEnemyType);
+					            dunPlace(dungeonRooms[(dungeonWidth * DungeonY) + DungeonX]);
+					        } else if (this.pos.Y < this.screenMinY) {
+					            this.pos.Y = 600;
+					            DungeonY -= 1;
+					            enemyReset(currentEnemyType);
+					            dunPlace(dungeonRooms[(dungeonWidth * DungeonY) + DungeonX]);
+					        } 
+					    } else if (isForest) {
+					        audio.Delay(false);
+					        if (this.pos.X > this.screenMaxX) {
+					            if (forest.PlayerX < forest.width-1) {
+					                this.pos.X = 10;
+					                forest.PlayerX += 1;
+					                forestBuild((forest.width * forest.PlayerX) + forest.PlayerY);
+					                enemyReset(currentEnemyType);
+					            } else {
+					                this.pos.X = 900;
+					                var hinting = document.getElementById('instructions');
+					                hinting.innerHTML = 'Hint: Dont go that way trust me!';
+					            }
+					        }else if (this.pos.X < this.screenMinX) {
+					            if (forest.PlayerX > 0) {
+					                this.pos.X = 900;
+					                forest.PlayerX -= 1;
+					                forestBuild((forest.width * forest.PlayerX) + forest.PlayerY);
+					                enemyReset(currentEnemyType);
+					            } else {
+					                this.pos.X = 50;
+					                var hinting = document.getElementById('instructions');
+					                hinting.innerHTML = 'Hint: Dont go that way trust me!';
+					            }
+					        }
+					        if (this.pos.Y > this.screenMaxY) {
+					            if (forest.PlayerY < forest.height-1) {
+					                this.pos.Y = 0;
+					                forest.PlayerY += 1;
+					                forestBuild((forest.width * forest.PlayerX) + forest.PlayerY);
+					                enemyReset(currentEnemyType);
+					            } else {
+					                this.pos.Y = 600;
+					                var hinting = document.getElementById('instructions');
+					                hinting.innerHTML = 'Hint: Dont go that way trust me!';
+					            }
+					        }
+					        if (this.pos.Y < this.screenMinY) {
+					            if (forest.PlayerY > 0) {
+					                this.pos.Y = 600;
+					                forest.PlayerY -= 1;
+					                forestBuild((forest.width * forest.PlayerX) + forest.PlayerY);
+					                enemyReset(currentEnemyType);
+					            } else {
+					                this.pos.Y = 50;
+					                var hinting = document.getElementById('instructions');
+					                hinting.innerHTML = 'Hint: Dont go that way trust me!';
+					            }
+					        }
+					    }
+					};
+
+					this.attackDirection = "right";
+					this.Draw = function(){	
+						this.Input();
+						
+						var AttackDirX = 0;
+						var AttackDirY = 0;
+						if (Math.abs(self.VelocityX) >= Math.abs(self.VelocityY)) {
+						    AttackDirX = MathSign(self.VelocityX);
+						    if (self.VelocityX > 0) {
+						        this.attack.SetOffset(this.size + this.border, 0);
+						    } else if (self.VelocityX < 0) {
+						        this.attack.SetOffset(-this.attack.width, 0);
+						    }
+						} else {
+						    AttackDirY = MathSign(self.VelocityY);
+						    if (self.VelocityY > 0) {
+						        this.attack.SetOffset(0, this.size + this.border);
+						    } else if (self.VelocityY < 0) {
+						        this.attack.SetOffset(0, -this.attack.height);
+						    }
+						}
+						this.attack.Reposition(this.pos);
+						
+						var knockBack = 500;
+						if (this.space) {
+						    
+						    this.attack.Draw();
+							var attacker = this.attack;
+							if (!attackTrigger) {
+								enemies.forEach(function(enemy) {
+								if(typeof(enemy)!="undefined"){
+									if(collides(attacker,enemy)){
+									    if (character.attackAlgorithm()) {
+									        enemy.Data -= character.damageAlgorithm();
+									        enemy.pos.X += AttackDirX * knockBack / enemy.width;
+									        enemy.pos.Y += AttackDirY * knockBack / enemy.width;
+									        console.log(enemy.size);
+											enemy.SetColor('#980002');
+											console.log(enemy.Data);
+											if ((enemy.Data * character.getLevel()) < 0) {
+											    //enemies.splice(enemies.indexOf(enemy), 1);
+											    enemy.SetPos(new Vec2(-500,-500));
+											    //hit.splice(hit.indexOf(enemy));
+											    //elements.splice(elements.indexOf(enemy),1);
+											    self.sound.enemyKill.Trigger();
+												character.endFight(enemy.Data2);
+												if (enemy.width === 150) {
+
+													goToForest();
+												}
+											}
+										}
+									}
+								}
+							});
+						}
+							attackTrigger = true;
+						} else {
+						    if (attackTrigger) {
+						        this.sound.attack.Trigger();
+								attackTrigger = false;
+								enemies.forEach(function(enemy) {
+									if (enemy.color === '#980002') {
+										enemy.SetColor('black');
+									}
+								});
+							}
+						}
+						if(character.currentHealth < 0) {
+							if(!gameover){
+								var gameOver = new engine.button(190, 390,101).SetText("GAME OVER!").SetPadding(10,15).SetBGColor("#010000").SetColor("#EEE").SetFontSize(90);
+								setTimeout(function(){
+									gameover = true;
+								}, 500);
+							}
+						}
+						this.outline.Reposition(this.pos).Draw();
+						this.water.Reposition(this.pos).Draw();
+						this.fire.Reposition(this.pos).Draw();
+						this.air.Reposition(this.pos).Draw();
+						this.earth.Reposition(this.pos).Draw();
+						return this;
+					};
+					return this;
+
+				};
+				
+				var GUI = function() {
+					this.guiBackground = new engine.sq(0,650,90).SetWidth(960).SetHeight(75).SetColor('#333333').SetBorder('#333333');
+					this.toggleWater = new engine.button(21,695,101).SetText("1").SetPadding(10,15).SetBGColor("black").SetColor("black").SetFontSize(30).StoreData('#003EFF');
+					this.WaterText = new engine.button(69,695,101).SetText("Water").SetPadding(10,15).SetBGColor("#010000").SetColor("#010000").SetFontSize(30);
+					this.toggleFire = new engine.button(189, 695,101).SetText("2").SetPadding(10,15).SetBGColor("black").SetColor("black").SetFontSize(30).StoreData('#B22222');
+					this.FireText = new engine.button(237, 695,101).SetText("Fire").SetPadding(10,15).SetBGColor("#010000").SetColor("#010000").SetFontSize(30);
+					this.toggleEarth = new engine.button(328, 695,101).SetText("3").SetPadding(10,15).SetBGColor("black").SetColor("black").SetFontSize(30).StoreData('#6B4226');
+					this.EarthText = new engine.button(376, 695,101).SetText("Earth").SetPadding(10,15).SetBGColor("#010000").SetColor("#010000").SetFontSize(30);
+					this.toggleAir = new engine.button(487, 695,101).SetText("4").SetPadding(10,15).SetBGColor("black").SetColor("black").SetFontSize(30).StoreData("#FAEBD7");
+					this.AirText = new engine.button(535, 695,101).SetText("Air").SetPadding(10,15).SetBGColor("#010000").SetColor("#010000").SetFontSize(30);
+					this.stats = new engine.button(875,695,101).SetText("Stats").SetPadding(10,15).SetBGColor("#CCAC00").SetColor("black").SetFontSize(25);
+					this.StatsListener = new engine.sq(862, 667,89).SetWidth(85).SetHeight(39).SetColor('#000').SetBorder('#000').on('click', statsMenu);
+
+					return this;
+				};
+
+				function statsMenu(){
+					var box = document.getElementById('stats'), combat = document.getElementById('combat'), water = document.getElementById('water'), fire = document.getElementById('fire'), earth = document.getElementById('earth'), air = document.getElementById('air'), closebutton, power = document.getElementById('power'), acc = document.getElementById('acc'), watLab = document.getElementById('waterLabel'), firLab = document.getElementById('fireLabel'), earLab = document.getElementById('earthLabel'), airLab = document.getElementById('airLabel'), xp = document.getElementById('xp'), stat = character.stats, playlvl = Math.floor((stat.Level/500)+1);
+					if (!statstoggle) {
+						combat.innerHTML = playlvl;
+						xp.innerHTML = (stat.Level - ((playlvl-1)*500)) + '/500';
+						power.innerHTML = playlvl * 10;
+						acc.innerHTML = playlvl * 10;
+						water.innerHTML = character.water.Data;
+						fire.innerHTML = character.fire.Data;
+						earth.innerHTML = character.earth.Data;
+						air.innerHTML = character.air.Data;
+						box.style.left = '50%', box.style.top = 300;
+						if (!firstStats){
+							closebutton = document.getElementById('statsClose');
+							closebutton.addEventListener("click", closeStats);
+							firstStats = true;
+						}
+						statstoggle = true;
+					} else {
+						closeStats();
+						statstoggle = false;
+					}
+				}
+
+				function closeStats() {
+					var box = document.getElementById('stats'); box.style.left = -780, box.style.top = -300;
+					statstoggle = false;
+				}
+
+				var Building = function (x,y,z,color,name,ele){
+					var self = this;
+					this.outside = new engine.sq(x,y,z).SetColor(color).SetSize(150).SetName(name).SetParent(self).collidable(true).StoreData(ele);
+					this.door = new engine.sq(x+43,y+80,z+1).SetColor('gray').SetSize(70).SetName('door');
+					this.buildText = new engine.button(x+35, y+58,z+1).SetText(name).SetPadding(10,15).SetBGColor("#CCAC00").SetColor("black").SetFontSize(20);
+					this.StoreData = function(n){
+						self.Data = n; 
+					};
+					this.StoreData2 = function(b) {
+						self.Data2 = b;
+					};
+
+					this.beaten = false;
+					this.Beaten = function () {
+					    this.beaten = true;
+					    this.buildText.SetText("Beaten");
+					    this.outside.SetColor("gray");
+					    self.outside.collidable(false);
+					};
+
+					
+
+					this.NewPos = function(x,y) {
+						self.outside.SetPos(new Vec2(x,y));
+						self.door.SetPos(new Vec2(x+43,y+80));
+						self.buildText.SetPos(new Vec2(x+35,y+58));
+						if (!this.isActive()) {
+						    if (this.outside.collider) {
+						        this.outside.collidable(false);
+						    }
+						    return;
+						} else if (!this.outside.collider); {
+						    this.outside.collidable(true);
+						}
+					};
+
+					this.isActive = function () {
+					    if (this.beaten) {
+					        return false;
+					    }
+				        return (this.outside.pos.X > 0 || this.outside.pos.Y > 0);
+				    };
+				};
+
+				var Tree = function(x,y,z){
+					var self = this;
+					this.leaves = new engine.sq(x,y,z).SetColor('green').SetSize(60).SetName('leaves');
+					this.root = new engine.sq(x+20,y+60,z-1).SetColor('#6B4226').SetWidth(20).SetHeight(62).SetName('root');
+					this.blocking = new engine.sq(x+17,y+110,-6).SetColor('#3f9b0b').SetBorder('#3f9b0b').SetSize(29).SetName('collidable').collidable(true);
+					this.StoreData = function(n){
+						self.Data = n; 
+					};
+					this.StoreData2 = function(b) {
+						self.Data2 = b;
+					};
+					this.NewPos = function(x,y) {
+						self.leaves.SetPos(new Vec2(x,y));
+						self.root.SetPos(new Vec2(x+20,y+60));
+						self.blocking.SetPos(new Vec2(x + 17, y + 101));
+
+						if (!this.isActive()) {
+						    if (this.blocking.collider) {
+						        this.blocking.collidable(false);
+						    }
+						    return;
+						} else if (!this.blocking.collider); {
+						    this.blocking.collidable(true);
+						}
+					};
+
+					this.isActive = function () {
+					    return (this.blocking.pos.X > 0 || this.blocking.pos.Y > 0);
+					};
+					
+				};
+
+				var Forest = function(w,h) {
+					isForest = true;
+					this.width = w;
+					this.height = h;
+					this.PlayerX = 1;
+					this.PlayerY = 1;
+					this.buildings = {
+						'fireTemple' : new Building(-500,-500,-1,'red','Dungeon','#B22222'),
+						'waterTemple' : new Building(-500,-500,-1,'blue','Dungeon','#003EFF'),
+						'earthTemple' : new Building(-500,-500,-1, '#6B4226', 'Dungeon','#6B4226'),
+						'airTemple' : new Building(-500,-500,-1,'#FAEBD7','Dungeon','#FAEBD7')
+					};
+					for (var j = 0; j < 14; j++) {
+						for (var i = 0; i < 5; i++) {
+							var alltrees = new Tree(-500,-500,5);
+							alltrees.StoreData((((j+1)*65)-40));
+							alltrees.StoreData2(i*130);
+							treePopulation.push(alltrees);
+						}
+					}
+					//set which screen the dungeons will go on
+					var oneFourth = Math.floor((w*h)/4);
+					this.buildings.fireTemple.StoreData(fM(0,oneFourth));
+					this.buildings.waterTemple.StoreData(fM(oneFourth+1,(oneFourth+oneFourth)));
+					this.buildings.earthTemple.StoreData(fM(((oneFourth+oneFourth)+1),(oneFourth*3)));
+					this.buildings.airTemple.StoreData(fM(((oneFourth*3)+1),(oneFourth*4)));
+					//console.log(treePopulation[0].Data2);
+					//console.log(treePopulation.length);
+				    //forestBuild();
+
+					this.GetAll = function() {
+					    var forestSize = this.width * this.height;
+					    for (var i = 0; i < forestSize; i++) {
+					        var newArea = [new ForArray(), new ForArray(), dungE(), new ForArray(), new ForArray()];
+					        forestRooms.push(newArea);
+					    }
+					};
+				};
+
+				function fM(min,max) {
+					return Math.floor(Math.random() * (max - min + 1)) + min;
+				}
+
+
+				function forestBuild(roomNum) {
+				    var placement = forestRooms[roomNum];
+				    forBlock = 0;
+				    resetBuilding();
+					for (var j = 0; j < placement.length; j++) {
+					    for (var i = 0; i < placement[j].length; i++) {
+							treePopulation[forBlock].NewPos(-500,-500);
+							if(trueFinder(placement[j][i])){
+								treePopulation[forBlock].NewPos(treePopulation[forBlock].Data,treePopulation[forBlock].Data2);
+								console.log(placement[j][i]);
+							} else if (placement[j][i] !== 0) {
+								placeBuilding(placement[j][i]);
+							} 
+							forBlock++;
+						}
+					}
+				}
+
+				function resetBuilding(){
+					forest.buildings.fireTemple.NewPos(-500,-500);
+					forest.buildings.waterTemple.NewPos(-500,-500);
+					forest.buildings.earthTemple.NewPos(-500,-500);
+					forest.buildings.airTemple.NewPos(-500,-500);
+				}
+
+				function placeBuilding(t){
+					if (t == 2){
+						forest.buildings.fireTemple.NewPos(440, 350);
+					} else if (t == 3) {
+						forest.buildings.waterTemple.NewPos(440, 350);
+					} else if (t == 4) {
+						forest.buildings.earthTemple.NewPos(440, 350);
+					} else if (t == 5) {
+						forest.buildings.airTemple.NewPos(440, 350);
+					}
+				}
+
+
+				function prepDungeons() {
+					for (var j = 0; j < 6; j++) {
+						for (var i = 0; i < 8; i++) {
+							//new engine.ascii(0, (40*[i])/2,3).SetText("x", 1).SetColor("black").SetFontSize(52);
+						    var newSQ = new engine.sq(-500, -500, blockOverLap).SetColor('black').SetSize(118).SetName("block").SetBorder('gray').StoreData(((i) * 122)).StoreData2(((107 * (j + 1))) - 107);
+						    //console.log(newSQ.collider);
+							dungeonArray.push(newSQ);
+							blockOverLap++;
+						}
+					}
+					//dunGen(3,3);
+				}
+
+				function zO(){
+					return Math.round(Math.random());
+				}
+
+				function dungE(){
+					if (forestRooms.length == forest.buildings.fireTemple.Data){
+						return [0,0,0,0,0,0,0,2,0,0,0,0,0,0];
+					} else if (forestRooms.length == forest.buildings.waterTemple.Data){
+						return [0,0,0,0,0,0,3,0,0,0,0,0,0,0];
+					} else if (forestRooms.length == forest.buildings.earthTemple.Data){
+						return [0,0,0,0,0,4,0,0,0,0,0,0,0,0];
+					} else if (forestRooms.length == forest.buildings.airTemple.Data){
+						return [0,0,0,0,0,0,0,5,0,0,0,0,0,0];
+					} else {
+						return [0,0,0,0,0,0,0,0,0,0,0,0,0,0];
+					}
+				} 
+
+				function ForArray(){
+					return [0,0,zO(),0,zO(),0,0,zO(),0,0,zO(),zO(),0,0];
+				} 
+
+				function trueFinder(zz){
+					if (zz === 1) {
+						return true;
+					} else {
+						return false;
+					}
+				}
+
+				function goToForest() {
+				    if (currentDungeon !== null) {
+				        console.log(currentDungeon);
+				        currentDungeon.Beaten();
+				    }
+					c.style.background = '#3f9b0b';
+					isForest = true;
+					isDungeon = false;
+					DungeonX = 0;
+					DungeonY = 0;
+
+					if (currentEnemyType === '#003EFF'){
+						gui.toggleWater.SetBGColor(gui.toggleWater.Data);
+						gui.WaterText.SetColor('#EEE');
+						character.hasWater = true;
+						character.SetAttackType('#003EFF');
+						character.water.SetBorder('#003EFF');
+						character.water.StoreData(1);
+						var wlabel = document.getElementById('waterLabel');
+						wlabel.innerHTML = 'Water Level';
+						finalCount++;
+					} else if (currentEnemyType === '#B22222') {
+						gui.toggleFire.SetBGColor(gui.toggleFire.Data);
+						gui.FireText.SetColor('#EEE');
+						character.hasFire = true;
+						character.SetAttackType('#B22222');
+						character.fire.SetBorder('#B22222');
+						character.fire.StoreData(1);
+						var flabel = document.getElementById('fireLabel');
+						flabel.innerHTML = 'Fire Level';
+						finalCount++;
+					} else if (currentEnemyType === '#FAEBD7') {
+						gui.toggleAir.SetBGColor(gui.toggleAir.Data);
+						gui.AirText.SetColor('#EEE');
+						character.hasAir = true;
+						character.SetAttackType('#FAEBD7');
+						character.air.SetBorder('#FAEBD7');
+						character.air.StoreData(1);
+						var alabel = document.getElementById('airLabel');
+						alabel.innerHTML = 'Air Level';
+						finalCount++;
+					} else if (currentEnemyType === '#6B4226') {
+						gui.toggleEarth.SetBGColor(gui.toggleEarth.Data);
+						gui.EarthText.SetColor('#EEE');
+						character.hasEarth = true;
+						character.SetAttackType('#6B4226');
+						character.earth.SetBorder('#6B4226');
+						character.earth.StoreData(1);
+						var elabel = document.getElementById('earthLabel');
+						elabel.innerHTML = 'Earth Level';
+						finalCount++;
+					}
+					currentEnemyType = '#111111';
+					dungeonArray.forEach(function(block) {
+							block.SetPos(new Vec2(-500, -500));
+						    block.collidable(false);
+					});
+					if (finalCount != 4){
+						forestBuild((forest.width * forest.PlayerX) + forest.PlayerY);
+					} else {
+						finalStage();
+					}
+				}
+
+				function finalStage(){
+					var chie = document.getElementById('ChooseDifficulty');
+					gameover = true;
+						chie.innerHTML = '<p>Congradulations! You have completed the checklist. Getting the last element caused you to become the most famous person in all of <i>GEOATE</i>.</p> <p>You have just beaten <i>Best Game Ever. Of All Time. Ever.</i> Which also makes you one of the best players of <i>Best Game Ever. Of All Time. Ever.</i> So take a minute and reflect on how awesome you are, or refresh the page to play again.</p>';
+						statsMenu();
+						chie.style.display = 'block';
+				} 
+
+				function goToDungeon(){
+					var newForBlock = 0;
+					c.style.background = '#333333';
+					resetBuilding();
+					for (var j = 0; j < 14; j++) {
+						for (var i = 0; i < 5; i++) {
+					    	treePopulation[newForBlock].NewPos(-500,-500);
+							newForBlock++;
+						}
+					}
+					dunGen((3*difficulty),(3*difficulty));
+				}
+
+				function dunGen(dunWidth, dunHeight) {
+						isForest = false;
+						isDungeon = true;
+						dungeonRooms.length = 0;
+						var room1 = [[1,1,1,1,1,1,1,1],
+							 		[1,1,0,0,0,0,zO(),1],
+							 		[1,0,0,0,0,0,0,zO()],
+							 		[1,0,0,0,0,0,0,zO()],
+							 		[1,zO(),0,0,0,0,zO(),1],
+							 		[1,1,zO(),zO(),0,zO(),1,1]];
+						var newbottomBlocks = room1[5];
+						var bottomBlocks = room1[5];
+						for (var i = 0; i < room1.length; i++) {
+							rightBlocks.push(room1[i][7]);
+						}
+						dungeonRooms.push(room1);
+						var dunSize = (dunWidth*dunHeight)-1;
+						dungeonWidth = dunWidth;
+						//console.log(dunSize);
+						for (var j = 0; j < dunSize; j++) {
+							if(j <= (dunWidth-3)) {
+								//top middle of dungeon
+								var newRooms = [dungeonRooms[0][0],
+												[rightBlocks[1],0,0,0,0,0,zO(),1],
+												[rightBlocks[2],0,zO(),0,zO(),0,0,zO()],
+												[rightBlocks[3],0,0,0,0,zO(),0,zO()],
+												[rightBlocks[4],zO(),0,0,0,0,zO(),1],
+												bottomBlocks];
+								rightBlocks = [];
+								for (var g = 0; g < newRooms.length; g++) {
+                                     rightBlocks.push(newRooms[g][7]);
+								}
+								dungeonRooms.push(newRooms);
+							} else if(j == (dunWidth-2)){
+								//top right of dungeon
+								console.log('1');
+								var newRooms = [dungeonRooms[0][0],
+												[rightBlocks[1],zO(),0,0,0,0,zO(),1],
+												[rightBlocks[2],0,0,zO(),zO(),0,zO(),1],
+												[rightBlocks[3],0,0,zO(),0,0,zO(),1],
+												[rightBlocks[4],0,zO(),0,0,0,zO(),1],
+												bottomBlocks];
+								dungeonRooms.push(newRooms);
+								//dunmiddle ++;
+							} else if(j == (((dunWidth*dunmiddle)+1)-2) && j != ((dunWidth*(dunHeight-1))-1)) {
+								//left middle of dungeon
+								bottomBlocks = newbottomBlocks;
+								var newRooms = [bottomBlocks,
+												[1,0,0,0,0,0,0,1],
+												[1,zO(),0,0,zO(),zO(),0,zO()],
+												[1,zO(),0,zO(),0,0,0,zO()],
+												[1,zO(),0,0,0,0,0,zO()],
+												[1,1,1,zO(),0,zO(),zO(),1]];
+								rightBlocks = [];
+								newbottomBlocks = newRooms[5]; 
+								for (var h = 0; h < newRooms.length; h++) {
+                                     rightBlocks.push(newRooms[h][7]);
+								}
+								dungeonRooms.push(newRooms);
+							} else if (j != (((dunWidth*dunmiddle)+1)-2) && j != ((dunWidth*(dunmiddle+1))-2) && j < ((dunWidth*(dunHeight-1))-1)) {
+								//middle/center of the dungeon
+								var newRooms = [bottomBlocks,
+												[rightBlocks[1],zO(),0,0,0,0,0,zO()],
+												[rightBlocks[2],0,zO(),zO(),0,0,0,zO()],
+												[rightBlocks[3],0,zO(),0,zO(),0,0,zO()],
+												[rightBlocks[4],zO(),zO(),0,0,0,0,zO()],
+												newbottomBlocks];
+								rightBlocks = [];
+								for (var q = 0; q < newRooms.length; q++) {
+                                     rightBlocks.push(newRooms[q][7]);
+								}
+								dungeonRooms.push(newRooms);
+							} else if (j == ((dunWidth*(dunmiddle+1))-2) && j != ((dunWidth*dunHeight)-2)) {
+								//right middle/center of dungeon
+								var newRooms = [bottomBlocks,
+												[rightBlocks[1],0,0,0,0,0,zO(),1],
+												[rightBlocks[2],0,0,zO(),0,0,zO(),1],
+												[rightBlocks[3],0,zO(),zO(),0,0,zO(),1],
+												[rightBlocks[4],0,0,0,0,0,zO(),1],
+												newbottomBlocks];
+								dunmiddle++;
+								dungeonRooms.push(newRooms);
+							}else if (j == ((dunWidth*(dunHeight-1))-1)){
+								//bottom left of dungeon
+								console.log('2');
+								bottomBlocks = newbottomBlocks;
+								var newRooms = [bottomBlocks,
+												[1,0,0,0,0,0,0,zO()],
+												[1,zO(),0,0,0,0,0,zO()],
+												[1,zO(),0,zO(),0,0,0,zO()],
+												[1,zO(),zO(),zO(),zO(),zO(),0,zO()],
+												[1,1,1,1,1,1,1,1]];
+								rightBlocks = [];
+								for (var he = 0; he < newRooms.length; he++) {
+                                     rightBlocks.push(newRooms[he][7]);
+								}
+								dungeonRooms.push(newRooms);
+							} else if (j == ((dunWidth*dunHeight)-2)){
+								//bottom right of dungeon
+								console.log('3');
+								var lastRoom = [bottomBlocks,
+												[rightBlocks[1],0,0,0,0,0,0,1],
+												[rightBlocks[2],0,0,0,0,0,0,1],
+												[rightBlocks[3],0,0,0,0,0,0,1],
+												[rightBlocks[4],0,0,0,0,0,5,1],
+												[1,1,1,1,1,1,1,1]];
+								dungeonRooms.push(lastRoom);
+							} else {
+								var newRooms = [bottomBlocks,
+												[rightBlocks[1],0,0,0,0,0,0,zO()],
+												[rightBlocks[2],0,zO(),0,0,zO(),0,zO()],
+												[rightBlocks[3],0,0,zO(),zO(),0,0,zO()],
+												[rightBlocks[4],0,zO(),zO(),zO(),zO(),0,zO()],
+												[1,1,1,1,1,1,1,1]];
+								rightBlocks = [];
+								for (var hs = 0; hs < newRooms.length; hs++) {
+                                     rightBlocks.push(newRooms[hs][7]);
+								}
+								dungeonRooms.push(newRooms);
+							}
+							//console.log(j);
+							
+						}
+						
+						dunPlace(dungeonRooms[0]);
+						enemyReset(currentEnemyType);
+						//console.log(dungeonRooms);
+				}
+
+				function dunPlace(exam) {
+					for (var j = 0; j < exam.length; j++) {
+						for (var i = 0; i < exam[j].length; i++) {
+						    if (trueFinder(exam[j][i]) && exam[j][i] != 5) {
+						        dungeonArray[dunBlock].SetPos(new Vec2(dungeonArray[dunBlock].Data, dungeonArray[dunBlock].Data2));
+						        dungeonArray[dunBlock].collidable(true);
+						    } else if(exam[j][i] == 5) {
+						    	console.log('this');
+						    	enemyRecycle[0].AdjEnemy(dungeonArray[dunBlock].Data, dungeonArray[dunBlock].Data2, currentEnemyType, true);
+						    }else {
+						        dungeonArray[dunBlock].SetPos(new Vec2(-500, -500));
+						        dungeonArray[dunBlock].collidable(false);
+						    }
+							dunBlock++;
+						}
+					}
+					dunBlock = 0;
+				}
+
+				function randomX() {
+					return Math.floor((Math.random() * 960) + 1);
+				}
+				function randomY() {
+					return Math.floor((Math.random() * 720) + 1);
+				}
+
+
+				var character = new Character();
+				//examples
+				//Added quick methods for changing object properties outside of the constructor.
+				//var square2 = new enemy(500,250,1,'red');
+				//var square3 = new enemy(495,500,1,'white');
+				//var square4 = new enemy(443,400,1,'#6B4226');
+				var forest = new Forest((3 + (difficulty - 1)),(3 + (difficulty - 1)));
+				forest.GetAll();
+				forestBuild((forest.width * forest.PlayerX) + forest.PlayerY);
+
+				
+				var gui = new GUI();
+				prepDungeons();
+				startingEnemies();
+
+				console.log(hit.length);
+
+				//var asciiTest = new engine.ascii(0, 40,3).SetText("*", 48).SetColor("black").SetFontSize(52).getStats();
+				// var oppositeSquare = new engine.sq(10,10,2).SetColor('green').SetSize(200).SetName("TEST");
+				//var line1 = new engine.line(80,95,2).SetColor('red').SetEnd(new Vec2(3,60));
+				// var button1 = new engine.button(100, 100,3).SetText("Best Game Ever").SetBGColor("green").SetColor("orange");
+				// var firstCircle = new engine.circle(15,15,3).SetColor('purple').SetSize(40);
+				var theGrid = engine.grid(0, 0, -5).SetSize(20);
+				
+				//dunGen(3,3);
+				//change properties of item after creation
+				//square.SetColor('purple');
+				//line1.SetEnd(new Vec2(line1.end.X,20));
+				//button1.top = '30';
+				
+				//goToDungeon();
+
+				//turn some collidables on for collidable test
+				//square.collidable(true);
+				//oppositeSquare.collidable(true);
+
+				//simple click example
+				// function changeYourColor() {
+				// 	oppositeSquare.color = 'blue';
+				// }
+				// function changeYourColor2() {
+				// 	oppositeSquare.color = 'red';
+				// }
+				// function Color2Out() {
+				// 	firstCircle.color = 'blue';
+				// }
+				// function circ() {
+				// 	firstCircle.color = 'green';
+				// }
+				// oppositeSquare.on('mouseover', changeYourColor);
+				// oppositeSquare.on('mouseout', changeYourColor2);
+				// //square.on('click', Color2Out);
+				// firstCircle.on('mouseover', circ);
+				// firstCircle.on('mouseout', Color2Out);
+
+				// set frames per second
+				var FPS = 30;
+				var frames = 0;
+				var time = 0;
+				setInterval(function() {
+					if(!gameover) {
+					character.border.rotation += 10;
+					time = frames/FPS;
+					frames++;
+					//clear canvas now it tends to bug out the closer you get to updating the canvas with the new redrawn item unfortunately this does not clear the canvas for lines so we will have to scratch the lines or come up with another solution.
+					ctx.canvas.width = ctx.canvas.width;
+					
+					//line1.SetPos(new Vec2(Math.cos(time*3)*200+200, Math.sin(time*5)*19+79)).SetEnd(new Vec2(Math.cos(time*2)*50+50,Math.sin(time*2)*50+50));
+					
+					//square.SetPos(new Vec2(Math.cos(time)*50+50, Math.sin(time)*50+50));
+					//oppositeSquare.SetPos(new Vec2(Math.sin(time*1.3)*50+50, Math.cos(time*1.3)*50+50));
+					
+					//draw all elements that should be on the canvas at this time.
+					healthbar.innerHTML = character.currentHealth;
+					healthtotal.innerHTML = (character.getLevel() * 500);
+					levelbar.innerHTML =  character.getLevel();
+  					update();
+  					}
+				}, 1000/FPS);
+
+				}
+
+			function intro(){
+				var difH = document.getElementById('hard'), difE = document.getElementById('easy');
+				difH.addEventListener("click", function(){
+                          story(2);
+                         },
+                         false);
+				difE.addEventListener("click", function(){
+                          story(1);
+                         },
+                         false);
+			}
+
+			function story(dif) {
+				var chi = document.getElementById('ChooseDifficulty'), con;
+				difficulty = dif;
+				chi.innerHTML = "<h4>In the land of <i>GEOATE</i> one shape made a checklist that changed his life forever.</h4><br> <table><tr><th>To Do List:</th></tr><tr><td>&#10003; Adventure into forest.</td></tr><tr><td>&#10175; Kill the things in forest.</td></tr><tr><td>&#10175; Find and make it through 4 dungeons.</td></tr><tr><td>&#10175; Obtain the power of all the elements.</td></tr><tr><td>&#10175; Become really really Famous.</td></tr><tr><td style='border-bottom: none'><button id='startgame'>Continue</button></td></tr></table>";
+				con = document.getElementById('startgame');
+				con.addEventListener("click", function() {
+					document.body.style.background = '#3f9b0b';
+					chi.style.display = 'none';
+					start();
+				}, false);
+
+			}
+			
+			intro();
+
+
+			};
+
+		</script>
+
+	</head>
+	<body>
+	<h2 id="gametitle">Best Game Ever. Of All Time. Ever.</h2>
+<canvas id="ms" width="960" height="720"></canvas>
+<div id="stats"><div>Player Stats</div><table><tr><td>Combat level</td><td id="combat"></td><td>Experience</td><td id="xp"></td></tr><tr><td>Power</td><td id="power"></td><td>Accuracy</td><td id="acc"></td></tr><tr><td id="waterLabel">????</td><td id="water"></td><td id="fireLabel">????</td><td id="fire"></td></tr><tr><td id="earthLabel">????</td><td id="earth"></td><td id="airLabel">????</td><td id="air"></td></tr></table><button id="statsClose">Close</button></div>
+<div id="instructions">Hint: Use arrow keys or a,s,w,d to move around, and spacebar to use your weapon.</div>
+<div id="ChooseDifficulty">Welcome to <i>Best Game Ever. Of All Time. Ever.</i>, please choose the difficulty<br><button id="hard">Hard</button><button id="easy">Easy</button></div>
+<div id="health">Health: <span id="healthbar"></span>/<span id="healthtotal"></span></div>
+<div id="level">LVL: <span id="levelbar"></span></div>
+	</body>
+</html>
